@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'order',
     'rest_framework_simplejwt',
     'authentication',
+    'category',
 ]
 
 MIDDLEWARE = [

@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.db.models import Q
 from .models import Product
 from store.serializers import ProductSerializer
+from rest_framework import status
 
 @api_view(["POST"])
 def create_product(request):
@@ -13,6 +14,23 @@ def create_product(request):
         serializer.save()
         return Response({"message": "Product created successfully", "data": serializer.data}, status=201)
     return Response(serializer.errors, status=400)
+
+@api_view(['GET'])
+def get_products(request):
+    products=Product.objects.all()
+    serializers=ProductSerializer(products,many=True)
+    return Response({"data":serializers.data},status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+def get_product(request,product_id):
+    try:
+        product=Product.objects.get(id=product_id)
+    except Product.DoesNotExist:
+        return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = ProductSerializer(product)
+    return Response(serializer.data)
 
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
@@ -39,3 +57,15 @@ def search_products(request):
 
     serializer = ProductSerializer(products, many=True)
     return Response({"data": serializer.data}, status=200)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_product(request, product_id):
+    try:
+        product = Product.objects.get(id=product_id)
+    except Product.DoesNotExist:
+        return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    product.delete()
+    return Response({'message': 'Product delete successfully'},status=status.HTTP_204_NO_CONTENT)
