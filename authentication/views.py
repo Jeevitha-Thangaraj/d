@@ -8,6 +8,10 @@ from authentication.serializer import  UserSerializer,ProfileSerializer
 from django.contrib.auth import authenticate,login,logout
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
+from order.models import Order
+from store.models import Product
+from authentication.permissions import IsAdminUserCustom
+
 
 
 
@@ -89,4 +93,53 @@ def update_profile(request):
     serializer.is_valid(raise_exception=True)
     serializer.save()
     return Response({"message":"profile updated successfully ","data":serializer.data},status=status.HTTP_200_OK)
+
+
+
+# GET - Get admin dashboard statistics
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUserCustom])
+def get_admin_dashboard(request):
+    total_users = User.objects.count()
+    total_orders = Order.objects.count()
+    total_sales = sum(order.total_price for order in Order.objects.all())
+    total_products = Product.objects.count()
+
+    return Response({
+        "total_users": total_users,
+        "total_orders": total_orders,
+        "total_sales": total_sales,
+        "total_products": total_products
+    }, status=status.HTTP_200_OK)
+
+# GET - Get all users (Admin)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUserCustom])
+def get_all_users(request):
+    users = User.objects.values('id', 'username', 'email', 'is_staff', 'date_joined')
+    return Response(users, status=status.HTTP_200_OK)
+
+# GET - Get all orders (Admin)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUserCustom])
+def get_all_orders(request):
+    orders = Order.objects.values('id', 'user__username', 'status', 'total_price', 'created_at')
+    return Response(orders, status=status.HTTP_200_OK)
+
+# GET - Get sales reports
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUserCustom])
+def get_sales_report(request):
+    orders = Order.objects.all()
+    total_sales = sum(order.total_price for order in orders)
+    report = [{"order_id": order.id, "user": order.user.username, "total_price": order.total_price} for order in orders]
+
+    return Response({"total_sales": total_sales, "orders": report}, status=status.HTTP_200_OK)
+
+# GET - Get inventory report
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUserCustom])
+def get_inventory_report(request):
+    products = Product.objects.values('id', 'name', 'price', 'stock')
+    return Response(products, status=status.HTTP_200_OK)
     

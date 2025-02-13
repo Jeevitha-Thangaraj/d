@@ -1,110 +1,80 @@
-from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-from store.models import  Product
-from order.models import Order,OrderItem,Payment,Cart
-from .serializers import OrderSerializer,OrderIemSerializer,PaymentSerializer,CartSerializer
-from django.conf import settings
-import stripe
+from rest_framework import status
+from order.models import Order, OrderItem
+from order.serializers import OrderSerializer
+from store.models import Product
 
-
-stripe.api_key=settings.STRIPE_SECRET_KEY
-
-
-
-@api_view(["POST"])
+# GET - Get user's order history
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def place_order(request):
-    user = request.user
-    cart_items = Cart.objects.filter(user=user)
-
-    if not cart_items.exists():
-        return Response({"message": "Your cart is empty!"}, status=400)
-
-    total_amount = sum(item.product.price * item.quatity for item in cart_items)
-
-    order = Order.objects.create(user=user, total_amount=total_amount, status="pending")
-
-    # Move items from Cart to OrderItems
-    for item in cart_items:
-        OrderItem.objects.create(
-            order=order,
-            product=item.product,
-            quantity=item.quantity,
-            price=item.product.price
-        )
-        # Reduce stock from the product
-        item.product.stock -= item.quantity
-        item.product.save()
-
-    # Clear cart after placing order
-    cart_items.delete()
-
-    return Response({"message": "Order placed successfully!", "order_id": order.id}, status=201)
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def user_orders(request):
-    orders = Order.objects.filter(user=request.user).order_by("-created_at")
+def get_order_history(request):
+    orders = Order.objects.filter(user=request.user)
     serializer = OrderSerializer(orders, many=True)
-    return Response({"orders": serializer.data}, status=200)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-@api_view(["GET"])
+# GET - Get order details by ID
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def order_detail(request, order_id):
-    order = get_object_or_404(Order, id=order_id, user=request.user)
-    serializer = OrderSerializer(order)
-    return Response({"order": serializer.data}, status=200)
-
-
-@api_view(["PATCH"])
-@permission_classes([IsAuthenticated, IsAdminUser])
-def update_order_status(request, order_id):
-    order = get_object_or_404(Order, id=order_id)
-    new_status = request.data.get("status")
-
-    if new_status not in ["pending", "paid", "shipped", "delivered", "cancelled"]:
-        return Response({"message": "Invalid status update!"}, status=400)
-
-    order.status = new_status
-    order.save()
-    return Response({"message": f"Order status updated to {new_status}!"}, status=200)
-
-
-@api_view(["PATCH"])
-@permission_classes([IsAuthenticated])
-def cancel_order(request, order_id):
-    order = get_object_or_404(Order, id=order_id, user=request.user)
-
-    if order.status != "pending":
-        return Response({"message": "You can only cancel pending orders."}, status=400)
-
-    order.status = "cancelled"
-
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def make_payment(request):
-    order_id = request.data.get("order_id")
+def get_order_details(request, order_id):
     try:
         order = Order.objects.get(id=order_id, user=request.user)
+        serializer = OrderSerializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
     except Order.DoesNotExist:
-        return Response({"message": "Order not found"}, status=404)
+        return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
 
+# POST - Create a new order
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_order(request):
+    items = request.data.get('items', [])
+    
+    if not items:
+        return Response({"error": "Order must contain at least one item"}, status=status.HTTP_400_BAD_REQUEST)
+
+    order = Order.objects.create(user=request.user, total_price=0)
+    total_price = 0
+
+    for item in items:
+        try:
+            product = Product.objects.get(id=item['product_id'])
+            quantity = int(item['quantity'])
+            price = product.price * quantity
+
+            OrderItem.objects.create(order=order, product=product, quantity=quantity, price=price)
+            total_price += price
+        except Product.DoesNotExist:
+            return Response({"error": f"Product with ID {item['product_id']} not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    order.total_price = total_price
+    order.save()
+
+    serializer = OrderSerializer(order)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+# PUT - Cancel an order
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def cancel_order(request, order_id):
     try:
-        payment_intent = stripe.PaymentIntent.create(
-            amount=int(order.total_amount * 100),  # Convert to cents
-            currency="usd",
-            payment_method=request.data.get("token"),
-            confirmation_method="manual",
-            confirm=True,
-        )
-        order.status = 'paid'
+        order = Order.objects.get(id=order_id, user=request.user)
+        if order.status in ['shipped', 'delivered']:
+            return Response({"error": "Cannot cancel an order that is already shipped or delivered"}, status=status.HTTP_400_BAD_REQUEST)
+
+        order.status = 'cancelled'
         order.save()
-        return Response({"message": "Payment successful", "payment_intent": payment_intent.id}, status=200)
-    except stripe.error.CardError as e:
-        return Response({"message": str(e)}, status=400)
+        return Response({"message": "Order cancelled successfully"}, status=status.HTTP_200_OK)
+    except Order.DoesNotExist:
+        return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+# GET - Get order tracking details
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def track_order(request, order_id):
+    try:
+        order = Order.objects.get(id=order_id, user=request.user)
+        return Response({"order_id": order.id, "status": order.status}, status=status.HTTP_200_OK)
+    except Order.DoesNotExist:
+        return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)

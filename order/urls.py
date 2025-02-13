@@ -1,11 +1,10 @@
 from django.urls import path
-from order.views import  place_order,user_orders, order_detail,update_order_status,cancel_order,make_payment
+from .views import get_order_history, get_order_details, create_order, cancel_order, track_order
 
 urlpatterns = [
-    path("products/order/",place_order),
-    path('orders/',user_orders),
-    path("order-details/<int:order_id>/",order_detail),
-    path("update/<int:order_id>/",update_order_status),
-    path("cancel/<int:order_id>/",cancel_order),
-    path("payments/", make_payment),
+    path('orders/', get_order_history),
+    path('orders/<int:order_id>/', get_order_details),
+    path('orders/create/', create_order),
+    path('orders/<int:order_id>/cancel/', cancel_order),
+    path('orders/<int:order_id>/track/', track_order),
 ]

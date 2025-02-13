@@ -22,5 +22,10 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('store/',include("store.urls")),
     path('auth/',include('authentication.urls')),
-    path('auth/get-csrf-token/',get_csrf_token)
+    path('auth/get-csrf-token/',get_csrf_token),
+    path('category/',include('category.urls')),
+    path('wishlist/',include('wishlist.urls')),
+    path('shipping/',include('shipping.urls')),
+    path('review/',include('review.urls')),
+    path('cart/',include('cart.urls')),
 ]
